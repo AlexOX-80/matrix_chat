@@ -188,17 +188,20 @@ export default function App() {
       (a, b) => b.getLastActiveTimestamp() - a.getLastActiveTimestamp()
     );
     setRooms(nextRooms);
+    const currentSelectedRoomId = selectedRoomIdRef.current;
 
     if (nextRooms.length === 0) {
       setSelectedRoomId("");
       return;
     }
 
-    if (keepSelection && nextRooms.some((r) => r.roomId === selectedRoomId)) {
+    if (keepSelection && nextRooms.some((r) => r.roomId === currentSelectedRoomId)) {
       return;
     }
 
-    setSelectedRoomId(nextRooms[0].roomId);
+    if (currentSelectedRoomId !== nextRooms[0].roomId) {
+      setSelectedRoomId(nextRooms[0].roomId);
+    }
   }
 
   async function login(event) {
