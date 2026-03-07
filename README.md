@@ -30,6 +30,19 @@ Hinweis fuer Matrix/Homeserver:
 - Falls Requests oder Bilder im Web nicht laden, liegt es meist an CORS oder Media-Auth auf dem Homeserver.
 - Dann die Vercel-Domain in der Homeserver/CORS-Konfiguration erlauben.
 
+## CI (GitHub Actions)
+
+Es gibt ein CI-Workflow unter `.github/workflows/ci.yml`.
+
+Trigger:
+- Push auf `main`
+- Pull Requests auf `main`
+- Manuell ueber `workflow_dispatch`
+
+Der Workflow fuehrt aus:
+- `npm ci`
+- `npm run build`
+
 ## Hinweis
 
 - Der Prototyp nutzt `matrix-js-sdk` ohne End-to-End-Verschluesselung.
