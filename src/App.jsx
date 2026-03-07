@@ -12,6 +12,15 @@ function getRoomName(room) {
   return room.name || room.getCanonicalAlias() || room.roomId;
 }
 
+function getInitials(value) {
+  if (!value) return "??";
+  const cleaned = value.replace(/^@/, "").split(":")[0].trim();
+  const parts = cleaned.split(/[\s._-]+/).filter(Boolean);
+  if (parts.length === 0) return cleaned.slice(0, 2).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+}
+
 function normalizeHomeserverUrl(input) {
   const raw = input.trim();
   if (!raw) {
@@ -398,96 +407,137 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <div>
-            <strong>{session.userId}</strong>
-            <small>Status: {syncState}</small>
-          </div>
-          <button onClick={logout}>Logout</button>
+    <div className="app-frame">
+      <header className="topbar">
+        <div className="topbar-left">
+          <button className="icon-btn" type="button">☰</button>
+          <h1>HabisChat</h1>
         </div>
+        <div className="topbar-right">
+          <button className="icon-btn" type="button">◻</button>
+          <button onClick={logout} type="button">Logout</button>
+        </div>
+      </header>
 
-        <form className="join-form" onSubmit={joinRoom}>
-          <input
-            value={joinInput}
-            onChange={(e) => setJoinInput(e.target.value)}
-            placeholder="Raum-ID oder Alias (#raum:server)"
-          />
-          <button type="submit">Join</button>
-        </form>
-
-        <div className="room-list">
-          {rooms.map((room) => (
+      <div className="app-shell">
+        <aside className="avatar-rail">
+          {rooms.slice(0, 6).map((room) => (
             <button
-              key={room.roomId}
-              className={room.roomId === selectedRoomId ? "room active" : "room"}
-              onClick={() => {
-                setSelectedRoomId(room.roomId);
-                setTimelineTick((x) => x + 1);
-              }}
+              key={`rail-${room.roomId}`}
+              type="button"
+              className={room.roomId === selectedRoomId ? "rail-avatar active" : "rail-avatar"}
+              onClick={() => setSelectedRoomId(room.roomId)}
             >
-              <span>{getRoomName(room)}</span>
-              <small>{room.getUnreadNotificationCount() || 0} ungelesen</small>
+              {getInitials(getRoomName(room))}
             </button>
           ))}
-          {rooms.length === 0 && <p className="empty">Keine Raeume gefunden.</p>}
-        </div>
-      </aside>
+        </aside>
 
-      <main className="chat-panel">
-        <header>
-          <h2>{selectedRoom ? getRoomName(selectedRoom) : "Kein Raum gewaehlt"}</h2>
-        </header>
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <div>
+              <strong>{session.userId}</strong>
+              <small>Status: {syncState}</small>
+            </div>
+            <input placeholder="Search" />
+          </div>
 
-        <section className="messages">
-          {events.map((event) => {
-            const content = event.getContent();
-            const isImageMessage = content.msgtype === "m.image" || event.getType() === "m.sticker";
-            const imageMxc = content.url || content.file?.url || null;
-
-            return (
-              <article key={event.getId()} className="message">
-                <div>
-                  <strong>{event.getSender()}</strong>
-                  <small>{formatTs(event.getTs())}</small>
-                </div>
-                {isImageMessage && imageMxc ? (
-                  <div className="image-message">
-                    <AuthenticatedImage client={client} mxcUrl={imageMxc} alt={content.body || "Bild"} />
-                    <p>{content.body || "Bild"}</p>
-                  </div>
-                ) : (
-                  <p>{content.body || "(Nicht-Text-Nachricht)"}</p>
-                )}
-              </article>
-            );
-          })}
-          {events.length === 0 && <p className="empty">Noch keine Nachrichten.</p>}
-        </section>
-
-        <form className="composer" onSubmit={sendMessage}>
-          <input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Nachricht schreiben..."
-            disabled={!selectedRoomId}
-          />
-          <label className={!selectedRoomId || uploadingImage ? "image-upload disabled" : "image-upload"}>
-            {uploadingImage ? "Upload..." : "Bild"}
+          <form className="join-form" onSubmit={joinRoom}>
             <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              onChange={sendImage}
-              disabled={!selectedRoomId || uploadingImage}
+              value={joinInput}
+              onChange={(e) => setJoinInput(e.target.value)}
+              placeholder="Raum-ID oder Alias (#raum:server)"
             />
-          </label>
-          <button type="submit" disabled={!selectedRoomId}>Senden</button>
-        </form>
+            <button type="submit">Join</button>
+          </form>
 
-        {error && <div className="error error-floating">{error}</div>}
-      </main>
+          <div className="room-list">
+            {rooms.map((room) => (
+              <button
+                key={room.roomId}
+                className={room.roomId === selectedRoomId ? "room active" : "room"}
+                onClick={() => {
+                  setSelectedRoomId(room.roomId);
+                  setTimelineTick((x) => x + 1);
+                }}
+              >
+                <span className="room-title">{getRoomName(room)}</span>
+                <small>{room.getUnreadNotificationCount() || 0} ungelesen</small>
+              </button>
+            ))}
+            {rooms.length === 0 && <p className="empty">Keine Raeume gefunden.</p>}
+          </div>
+        </aside>
+
+        <main className="chat-panel">
+          <header>
+            <div className="chat-peer">
+              <span className="chat-avatar">
+                {getInitials(selectedRoom ? getRoomName(selectedRoom) : session.userId)}
+              </span>
+              <div>
+                <h2>{selectedRoom ? getRoomName(selectedRoom) : "Kein Raum gewaehlt"}</h2>
+                <small>Online</small>
+              </div>
+            </div>
+            <div className="chat-actions">
+              <button type="button" className="dot-btn" />
+              <button type="button" className="dot-btn" />
+            </div>
+          </header>
+
+          <section className="messages">
+            {events.map((event) => {
+              const content = event.getContent();
+              const isImageMessage = content.msgtype === "m.image" || event.getType() === "m.sticker";
+              const imageMxc = content.url || content.file?.url || null;
+              const isOwn = event.getSender() === session.userId;
+
+              return (
+                <article key={event.getId()} className={isOwn ? "message outbound" : "message inbound"}>
+                  {!isOwn && <span className="msg-avatar">{getInitials(event.getSender())}</span>}
+                  <div className="bubble">
+                    {isImageMessage && imageMxc ? (
+                      <div className="image-message">
+                        <AuthenticatedImage client={client} mxcUrl={imageMxc} alt={content.body || "Bild"} />
+                        <p>{content.body || "Bild"}</p>
+                      </div>
+                    ) : (
+                      <p>{content.body || "(Nicht-Text-Nachricht)"}</p>
+                    )}
+                    <small className="msg-time">{formatTs(event.getTs())}</small>
+                  </div>
+                </article>
+              );
+            })}
+            {events.length === 0 && <p className="empty">Noch keine Nachrichten.</p>}
+          </section>
+
+          <form className="composer" onSubmit={sendMessage}>
+            <label className={!selectedRoomId || uploadingImage ? "image-upload disabled" : "image-upload"}>
+              +
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                onChange={sendImage}
+                disabled={!selectedRoomId || uploadingImage}
+              />
+            </label>
+            <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Nachricht schreiben..."
+              disabled={!selectedRoomId}
+            />
+            <button type="submit" disabled={!selectedRoomId}>
+              ➤
+            </button>
+          </form>
+
+          {error && <div className="error error-floating">{error}</div>}
+        </main>
+      </div>
     </div>
   );
 }
