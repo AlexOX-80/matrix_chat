@@ -165,6 +165,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef(null);
+  const ttsSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
   useEffect(() => {
     return () => {
@@ -172,8 +173,9 @@ export default function App() {
         client.stopClient();
         client.removeAllListeners();
       }
+      if (ttsSupported) window.speechSynthesis.cancel();
     };
-  }, [client]);
+  }, [client, ttsSupported]);
 
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -213,6 +215,14 @@ export default function App() {
     }
   }
 
+  function speakText(text) {
+    if (!ttsSupported || !text) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "de-DE";
+    window.speechSynthesis.speak(utterance);
+  }
+
   async function login(event) {
     event.preventDefault();
     setError("");
@@ -243,7 +253,7 @@ export default function App() {
 
       nextClient.on("Room", () => refreshRooms(nextClient));
 
-      nextClient.on("Room.timeline", (_event, room, toStartOfTimeline) => {
+      nextClient.on("Room.timeline", (matrixEvent, room, toStartOfTimeline) => {
         if (toStartOfTimeline) return;
         if (room?.roomId === selectedRoomIdRef.current) {
           setTimelineTick((x) => x + 1);
@@ -357,6 +367,9 @@ export default function App() {
     setTimelineTick(0);
     setSyncState("DISCONNECTED");
     setError("");
+    if (ttsSupported) {
+      window.speechSynthesis.cancel();
+    }
   }
 
   if (!session) {
@@ -410,11 +423,10 @@ export default function App() {
     <div className="app-frame">
       <header className="topbar">
         <div className="topbar-left">
-          <button className="icon-btn" type="button">☰</button>
+          <button className="icon-btn" type="button">Menu</button>
           <h1>HabisChat</h1>
         </div>
         <div className="topbar-right">
-          <button className="icon-btn" type="button">◻</button>
           <button onClick={logout} type="button">Logout</button>
         </div>
       </header>
@@ -492,6 +504,7 @@ export default function App() {
               const isImageMessage = content.msgtype === "m.image" || event.getType() === "m.sticker";
               const imageMxc = content.url || content.file?.url || null;
               const isOwn = event.getSender() === session.userId;
+              const isTextMessage = content.msgtype === "m.text" && Boolean(content.body);
 
               return (
                 <article key={event.getId()} className={isOwn ? "message outbound" : "message inbound"}>
@@ -504,6 +517,18 @@ export default function App() {
                       </div>
                     ) : (
                       <p>{content.body || "(Nicht-Text-Nachricht)"}</p>
+                    )}
+                    {isTextMessage && (
+                      <button
+                        type="button"
+                        className="speak-btn"
+                        onClick={() => speakText(content.body)}
+                        disabled={!ttsSupported}
+                        title={ttsSupported ? "Diese Nachricht vorlesen" : "Browser unterstuetzt kein Vorlesen"}
+                        aria-label="Nachricht vorlesen"
+                      >
+                        <span aria-hidden="true">🔊</span>
+                      </button>
                     )}
                     <small className="msg-time">{formatTs(event.getTs())}</small>
                   </div>
@@ -531,7 +556,7 @@ export default function App() {
               disabled={!selectedRoomId}
             />
             <button type="submit" disabled={!selectedRoomId}>
-              ➤
+              Send
             </button>
           </form>
 

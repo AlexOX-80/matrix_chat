@@ -116,6 +116,12 @@ input {
   min-width: 42px;
 }
 
+.icon-btn.active {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green-dark);
+}
+
 .app-shell {
   min-height: calc(100vh - 78px);
   display: grid;
@@ -308,6 +314,27 @@ input {
 .bubble p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.speak-btn {
+  margin-top: 0.45rem;
+  border: 1px solid #7ea83f;
+  background: #eef7df;
+  color: #2b4b14;
+  border-radius: 7px;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.speak-btn:hover {
+  background: #e1f0c8;
 }
 
 .msg-time {
