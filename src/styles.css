@@ -317,7 +317,6 @@ input {
 }
 
 .speak-btn {
-  margin-top: 0.45rem;
   border: 1px solid #7ea83f;
   background: #eef7df;
   color: #2b4b14;
@@ -331,6 +330,8 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .speak-btn:hover {

@@ -563,6 +563,32 @@ export default function App() {
               return (
                 <article key={event.getId()} className={isOwn ? "message outbound" : "message inbound"}>
                   {!isOwn && <span className="msg-avatar">{getInitials(event.getSender())}</span>}
+                  {isTextMessage && (
+                    <button
+                      type="button"
+                      className="speak-btn"
+                      onClick={() => speakText(content.body)}
+                      disabled={!ttsSupported}
+                      title={ttsSupported ? "Diese Nachricht vorlesen" : "Browser unterstuetzt kein Vorlesen"}
+                      aria-label="Nachricht vorlesen"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                        <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+                      </svg>
+                    </button>
+                  )}
                   <div className="bubble">
                     {isImageMessage && imageMxc ? (
                       <div className="image-message">
@@ -575,32 +601,6 @@ export default function App() {
                       </div>
                     ) : (
                       <p>{content.body || "(Nicht-Text-Nachricht)"}</p>
-                    )}
-                    {isTextMessage && (
-                      <button
-                        type="button"
-                        className="speak-btn"
-                        onClick={() => speakText(content.body)}
-                        disabled={!ttsSupported}
-                        title={ttsSupported ? "Diese Nachricht vorlesen" : "Browser unterstuetzt kein Vorlesen"}
-                        aria-label="Nachricht vorlesen"
-                      >
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 24 24"
-                          width="16"
-                          height="16"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-                          <path d="M18.5 5.5a9 9 0 0 1 0 13" />
-                        </svg>
-                      </button>
                     )}
                     <small className="msg-time">{formatTs(event.getTs())}</small>
                   </div>
