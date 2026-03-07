@@ -361,6 +361,24 @@ input {
   font-size: 0.92rem;
 }
 
+.pdf-message {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.pdf-message iframe {
+  width: min(100%, 620px);
+  height: 320px;
+  border: 1px solid #d6d6d9;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pdf-message a {
+  color: inherit;
+  font-size: 0.88rem;
+}
+
 .composer {
   border-top: 1px solid var(--line);
   padding: 0.75rem 0.9rem;

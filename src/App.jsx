@@ -67,6 +67,56 @@ function parseMxc(mxcUrl) {
   };
 }
 
+function getMediaCandidates(client, mxcUrl) {
+  if (!client || !mxcUrl) return [];
+
+  const homeserver = normalizeHomeserverUrl(client.getHomeserverUrl());
+  const parsed = parseMxc(mxcUrl);
+  const candidates = [
+    client.mxcUrlToHttp(mxcUrl, 900, 700, "scale", false, true, true),
+    client.mxcUrlToHttp(mxcUrl, undefined, undefined, undefined, false, true, true),
+  ];
+
+  if (parsed) {
+    const s = encodeURIComponent(parsed.server);
+    const m = encodeURIComponent(parsed.mediaId);
+    candidates.push(`${homeserver}/_matrix/client/v1/media/thumbnail/${s}/${m}?width=900&height=700&method=scale`);
+    candidates.push(`${homeserver}/_matrix/client/v1/media/download/${s}/${m}`);
+    candidates.push(`${homeserver}/_matrix/media/v3/thumbnail/${s}/${m}?width=900&height=700&method=scale`);
+    candidates.push(`${homeserver}/_matrix/media/v3/download/${s}/${m}`);
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+async function fetchMxcBlobUrl(client, mxcUrl, fallbackText) {
+  const accessToken = client.getAccessToken();
+  const diagnostics = [];
+  const candidates = getMediaCandidates(client, mxcUrl);
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        redirect: "follow",
+      });
+      if (!response.ok) {
+        diagnostics.push(`${response.status} ${response.statusText}`);
+        continue;
+      }
+      const blob = await response.blob();
+      return { blobUrl: URL.createObjectURL(blob), statusText: "" };
+    } catch (err) {
+      diagnostics.push(err?.message || "Netzwerkfehler");
+    }
+  }
+
+  return {
+    blobUrl: "",
+    statusText: `${fallbackText} (${diagnostics[diagnostics.length - 1] || "unbekannt"}).`,
+  };
+}
+
 function AuthenticatedImage({ client, mxcUrl, alt }) {
   const [src, setSrc] = useState("");
   const [statusText, setStatusText] = useState("Bild wird geladen...");
@@ -82,53 +132,11 @@ function AuthenticatedImage({ client, mxcUrl, alt }) {
         return;
       }
 
-      const accessToken = client.getAccessToken();
-      const homeserver = normalizeHomeserverUrl(client.getHomeserverUrl());
-      const parsed = parseMxc(mxcUrl);
-      const diagnostics = [];
-
-      const candidates = [
-        client.mxcUrlToHttp(mxcUrl, 900, 700, "scale", false, true, true),
-        client.mxcUrlToHttp(mxcUrl, undefined, undefined, undefined, false, true, true),
-      ];
-
-      if (parsed) {
-        const s = encodeURIComponent(parsed.server);
-        const m = encodeURIComponent(parsed.mediaId);
-        candidates.push(`${homeserver}/_matrix/client/v1/media/thumbnail/${s}/${m}?width=900&height=700&method=scale`);
-        candidates.push(`${homeserver}/_matrix/client/v1/media/download/${s}/${m}`);
-        candidates.push(`${homeserver}/_matrix/media/v3/thumbnail/${s}/${m}?width=900&height=700&method=scale`);
-        candidates.push(`${homeserver}/_matrix/media/v3/download/${s}/${m}`);
-      }
-
-      const uniqueCandidates = [...new Set(candidates.filter(Boolean))];
-
-      for (const url of uniqueCandidates) {
-        try {
-          const response = await fetch(url, {
-            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-            redirect: "follow",
-          });
-          if (!response.ok) {
-            diagnostics.push(`${response.status} ${response.statusText}`);
-            continue;
-          }
-
-          const blob = await response.blob();
-          if (canceled) return;
-          objectUrl = URL.createObjectURL(blob);
-          setSrc(objectUrl);
-          setStatusText("");
-          return;
-        } catch (err) {
-          diagnostics.push(err?.message || "Netzwerkfehler");
-        }
-      }
-
-      if (!canceled) {
-        setSrc("");
-        setStatusText(`Bild konnte nicht geladen werden (${diagnostics[diagnostics.length - 1] || "unbekannt"}).`);
-      }
+      const result = await fetchMxcBlobUrl(client, mxcUrl, "Bild konnte nicht geladen werden");
+      if (canceled) return;
+      objectUrl = result.blobUrl;
+      setSrc(result.blobUrl);
+      setStatusText(result.statusText);
     }
 
     setStatusText("Bild wird geladen...");
@@ -143,6 +151,48 @@ function AuthenticatedImage({ client, mxcUrl, alt }) {
 
   if (!src) return <p className="image-loading">{statusText}</p>;
   return <img src={src} alt={alt} loading="lazy" />;
+}
+
+function AuthenticatedPdf({ client, mxcUrl, filename }) {
+  const [src, setSrc] = useState("");
+  const [statusText, setStatusText] = useState("PDF wird geladen...");
+
+  useEffect(() => {
+    let canceled = false;
+    let objectUrl = "";
+
+    async function load() {
+      if (!client || !mxcUrl) {
+        setStatusText("Keine PDF-URL gefunden.");
+        setSrc("");
+        return;
+      }
+
+      const result = await fetchMxcBlobUrl(client, mxcUrl, "PDF konnte nicht geladen werden");
+      if (canceled) return;
+      objectUrl = result.blobUrl;
+      setSrc(result.blobUrl);
+      setStatusText(result.statusText);
+    }
+
+    setStatusText("PDF wird geladen...");
+    setSrc("");
+    load();
+
+    return () => {
+      canceled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [client, mxcUrl]);
+
+  if (!src) return <p className="image-loading">{statusText}</p>;
+
+  return (
+    <div className="pdf-message">
+      <iframe title={filename || "PDF Vorschau"} src={src} />
+      <a href={src} target="_blank" rel="noreferrer">PDF im neuen Tab oeffnen</a>
+    </div>
+  );
 }
 
 export default function App() {
@@ -503,6 +553,10 @@ export default function App() {
               const content = event.getContent();
               const isImageMessage = content.msgtype === "m.image" || event.getType() === "m.sticker";
               const imageMxc = content.url || content.file?.url || null;
+              const isPdfMessage =
+                content.msgtype === "m.file" &&
+                ((content.info?.mimetype || "").toLowerCase().includes("application/pdf") ||
+                  (content.body || "").toLowerCase().endsWith(".pdf"));
               const isOwn = event.getSender() === session.userId;
               const isTextMessage = content.msgtype === "m.text" && Boolean(content.body);
 
@@ -514,6 +568,10 @@ export default function App() {
                       <div className="image-message">
                         <AuthenticatedImage client={client} mxcUrl={imageMxc} alt={content.body || "Bild"} />
                         <p>{content.body || "Bild"}</p>
+                      </div>
+                    ) : isPdfMessage && imageMxc ? (
+                      <div className="pdf-wrap">
+                        <AuthenticatedPdf client={client} mxcUrl={imageMxc} filename={content.body} />
                       </div>
                     ) : (
                       <p>{content.body || "(Nicht-Text-Nachricht)"}</p>
@@ -527,7 +585,21 @@ export default function App() {
                         title={ttsSupported ? "Diese Nachricht vorlesen" : "Browser unterstuetzt kein Vorlesen"}
                         aria-label="Nachricht vorlesen"
                       >
-                        <span aria-hidden="true">🔊</span>
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                          <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+                        </svg>
                       </button>
                     )}
                     <small className="msg-time">{formatTs(event.getTs())}</small>
