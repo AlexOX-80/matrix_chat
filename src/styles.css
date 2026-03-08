@@ -440,9 +440,27 @@ input {
 @media (max-width: 1020px) {
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
 
-  .avatar-rail,
+  .avatar-rail {
+    display: flex;
+    gap: 0.55rem;
+    overflow-x: auto;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0.55rem 0.7rem;
+    background: #f3f3f3;
+  }
+
+  .avatar-rail .rail-avatar {
+    margin: 0;
+    min-width: 42px;
+    width: 42px;
+    height: 42px;
+  }
+
   .sidebar {
     display: none;
   }
