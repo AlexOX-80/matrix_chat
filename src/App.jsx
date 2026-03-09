@@ -211,6 +211,7 @@ export default function App() {
 
   const [message, setMessage] = useState("");
   const [joinInput, setJoinInput] = useState("");
+  const [chatSearch, setChatSearch] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -243,6 +244,26 @@ export default function App() {
       .getEvents()
       .filter((e) => e.getType() === "m.room.message");
   }, [selectedRoom, rooms, timelineTick]);
+
+  const filteredRooms = useMemo(() => {
+    const query = chatSearch.trim().toLowerCase();
+    if (!query) return rooms;
+
+    return rooms.filter((room) => {
+      const name = getRoomName(room).toLowerCase();
+      if (name.includes(query)) return true;
+
+      const lastEvent = room
+        .getLiveTimeline()
+        .getEvents()
+        .slice()
+        .reverse()
+        .find((e) => e.getType() === "m.room.message");
+
+      const body = (lastEvent?.getContent()?.body || "").toLowerCase();
+      return body.includes(query);
+    });
+  }, [rooms, chatSearch]);
 
   function refreshRooms(nextClient, keepSelection = true) {
     const nextRooms = [...nextClient.getRooms()].sort(
@@ -483,7 +504,7 @@ export default function App() {
 
       <div className="app-shell">
         <aside className="avatar-rail">
-          {rooms.slice(0, 6).map((room) => (
+          {filteredRooms.slice(0, 6).map((room) => (
             <button
               key={`rail-${room.roomId}`}
               type="button"
@@ -501,7 +522,11 @@ export default function App() {
               <strong>{session.userId}</strong>
               <small>Status: {syncState}</small>
             </div>
-            <input placeholder="Search" />
+            <input
+              value={chatSearch}
+              onChange={(e) => setChatSearch(e.target.value)}
+              placeholder="Chats durchsuchen..."
+            />
           </div>
 
           <form className="join-form" onSubmit={joinRoom}>
@@ -514,7 +539,7 @@ export default function App() {
           </form>
 
           <div className="room-list">
-            {rooms.map((room) => (
+            {filteredRooms.map((room) => (
               <button
                 key={room.roomId}
                 className={room.roomId === selectedRoomId ? "room active" : "room"}
@@ -528,6 +553,9 @@ export default function App() {
               </button>
             ))}
             {rooms.length === 0 && <p className="empty">Keine Raeume gefunden.</p>}
+            {rooms.length > 0 && filteredRooms.length === 0 && (
+              <p className="empty">Keine Treffer fuer "{chatSearch}".</p>
+            )}
           </div>
         </aside>
 
