@@ -67,6 +67,65 @@ function parseMxc(mxcUrl) {
   };
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function HighlightedText({ text, query }) {
+  if (!query || !text) return <>{text || ""}</>;
+  const regex = new RegExp(`(${escapeRegExp(query)})`, "ig");
+  const parts = String(text).split(regex);
+  return (
+    <>
+      {parts.map((part, idx) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark key={`${part}-${idx}`} className="search-mark">{part}</mark>
+        ) : (
+          <span key={`${part}-${idx}`}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
+function RichTextMessage({ text, query }) {
+  const value = String(text || "");
+  const urlRegex = /((?:https?:\/\/|www\.)[^\s<]+)/gi;
+  const parts = value.split(urlRegex);
+
+  function parseUrlToken(token) {
+    let core = token;
+    let suffix = "";
+    while (/[),.;!?]$/.test(core)) {
+      suffix = core.slice(-1) + suffix;
+      core = core.slice(0, -1);
+    }
+    return { core, suffix };
+  }
+
+  return (
+    <>
+      {parts.map((part, idx) => {
+        const isUrl = /^(?:https?:\/\/|www\.)/i.test(part);
+        if (!isUrl) {
+          return <HighlightedText key={`t-${idx}`} text={part} query={query} />;
+        }
+
+        const { core, suffix } = parseUrlToken(part);
+        const href = /^https?:\/\//i.test(core) ? core : `https://${core}`;
+        return (
+          <span key={`u-${idx}`}>
+            <a className="msg-link" href={href} target="_blank" rel="noreferrer">
+              <HighlightedText text={core} query={query} />
+            </a>
+            {suffix}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function getMediaCandidates(client, mxcUrl) {
   if (!client || !mxcUrl) return [];
 
@@ -211,11 +270,14 @@ export default function App() {
 
   const [message, setMessage] = useState("");
   const [joinInput, setJoinInput] = useState("");
+  const [joinSuggestions, setJoinSuggestions] = useState([]);
+  const [searchingJoinTargets, setSearchingJoinTargets] = useState(false);
   const [chatSearch, setChatSearch] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef(null);
+  const messagesRef = useRef(null);
   const ttsSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
   useEffect(() => {
@@ -245,25 +307,192 @@ export default function App() {
       .filter((e) => e.getType() === "m.room.message");
   }, [selectedRoom, rooms, timelineTick]);
 
-  const filteredRooms = useMemo(() => {
-    const query = chatSearch.trim().toLowerCase();
-    if (!query) return rooms;
+  const searchQuery = chatSearch.trim().toLowerCase();
 
-    return rooms.filter((room) => {
-      const name = getRoomName(room).toLowerCase();
-      if (name.includes(query)) return true;
-
-      const lastEvent = room
+  const roomMessageHitCountById = useMemo(() => {
+    if (!searchQuery) return new Map();
+    const map = new Map();
+    for (const room of rooms) {
+      const hits = room
         .getLiveTimeline()
         .getEvents()
-        .slice()
-        .reverse()
-        .find((e) => e.getType() === "m.room.message");
+        .reduce((count, e) => {
+          if (e.getType() !== "m.room.message") return count;
+          const body = (e.getContent()?.body || "").toLowerCase();
+          return body.includes(searchQuery) ? count + 1 : count;
+        }, 0);
+      map.set(room.roomId, hits);
+    }
+    return map;
+  }, [rooms, searchQuery]);
 
-      const body = (lastEvent?.getContent()?.body || "").toLowerCase();
-      return body.includes(query);
+  const filteredRooms = useMemo(() => {
+    if (!searchQuery) return rooms;
+
+    return rooms.filter((room) => {
+      const name = getRoomName(room).toLowerCase().includes(searchQuery);
+      if (name) return true;
+
+      const memberMatch = room
+        .getMembers()
+        .some((m) =>
+          `${m.name || ""} ${m.userId || ""}`.toLowerCase().includes(searchQuery)
+        );
+      if (memberMatch) return true;
+
+      return (roomMessageHitCountById.get(room.roomId) || 0) > 0;
     });
-  }, [rooms, chatSearch]);
+  }, [rooms, searchQuery, roomMessageHitCountById]);
+
+  const filteredEvents = useMemo(() => {
+    if (!searchQuery) return events;
+    return events.filter((event) => {
+      const content = event.getContent();
+      const body = (content?.body || "").toLowerCase();
+      const sender = (event.getSender() || "").toLowerCase();
+      return body.includes(searchQuery) || sender.includes(searchQuery);
+    });
+  }, [events, searchQuery]);
+
+  useEffect(() => {
+    if (!client) return;
+    const query = joinInput.trim();
+    if (!query || query.length < 2) {
+      setJoinSuggestions([]);
+      setSearchingJoinTargets(false);
+      return;
+    }
+
+    let canceled = false;
+    const timeoutId = setTimeout(async () => {
+      setSearchingJoinTargets(true);
+      const suggestions = [];
+
+      try {
+        const lower = query.toLowerCase();
+
+        for (const room of rooms) {
+          const roomName = getRoomName(room);
+          const haystack = `${roomName} ${room.roomId} ${room.getCanonicalAlias() || ""}`.toLowerCase();
+          if (haystack.includes(lower)) {
+            suggestions.push({
+              key: `local-room-${room.roomId}`,
+              type: "room",
+              target: room.roomId,
+              label: roomName,
+              subtitle: room.roomId,
+            });
+          }
+          if (suggestions.length >= 6) break;
+        }
+
+        try {
+          const pub = await client.publicRooms({
+            limit: 8,
+            filter: { generic_search_term: query },
+          });
+
+          for (const r of pub?.chunk || []) {
+            const target = r.canonical_alias || r.room_id;
+            if (!target) continue;
+            const key = `pub-room-${r.room_id}`;
+            if (suggestions.some((s) => s.key === key)) continue;
+            suggestions.push({
+              key,
+              type: "room",
+              target,
+              label: r.name || r.canonical_alias || r.room_id,
+              subtitle: r.canonical_alias || r.room_id,
+            });
+          }
+        } catch {
+          // Public room directory can be disabled; ignore.
+        }
+
+        try {
+          const users = await client.searchUserDirectory({ term: query, limit: 8 });
+          for (const u of users?.results || []) {
+            if (!u.user_id) continue;
+            suggestions.push({
+              key: `user-${u.user_id}`,
+              type: "user",
+              target: u.user_id,
+              label: u.display_name || u.user_id,
+              subtitle: u.user_id,
+            });
+          }
+        } catch {
+          // User directory search may be restricted.
+        }
+      } finally {
+        if (!canceled) {
+          const unique = [];
+          const seen = new Set();
+          for (const item of suggestions) {
+            const dedupeKey = `${item.type}:${item.target}`;
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+            unique.push(item);
+          }
+          setJoinSuggestions(unique.slice(0, 12));
+          setSearchingJoinTargets(false);
+        }
+      }
+    }, 260);
+
+    return () => {
+      canceled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [client, joinInput, rooms]);
+
+  function getLastTimelineMessageEvent(room) {
+    if (!room) return null;
+    const all = room.getLiveTimeline().getEvents();
+    for (let i = all.length - 1; i >= 0; i -= 1) {
+      const e = all[i];
+      if (e.getType() === "m.room.message" && e.getId()) return e;
+    }
+    return null;
+  }
+
+  async function markRoomAsRead(room = selectedRoom) {
+    if (!client || !room) return;
+    const lastEvent = getLastTimelineMessageEvent(room);
+    if (!lastEvent) return;
+    try {
+      await client.sendReadReceipt(lastEvent);
+      refreshRooms(client);
+    } catch {
+      // Ignore receipt errors in prototype mode.
+    }
+  }
+
+  useEffect(() => {
+    markRoomAsRead(selectedRoom);
+  }, [selectedRoomId, timelineTick]);
+
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+
+    let timeoutId = null;
+    const onScroll = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (remaining <= 24) {
+          markRoomAsRead(selectedRoom);
+        }
+      }, 120);
+    };
+
+    el.addEventListener("scroll", onScroll);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [selectedRoomId, selectedRoom, timelineTick, client]);
 
   function refreshRooms(nextClient, keepSelection = true) {
     const nextRooms = [...nextClient.getRooms()].sort(
@@ -416,13 +645,34 @@ export default function App() {
     if (!client || !joinInput.trim()) return;
 
     try {
-      const room = await client.joinRoom(joinInput.trim());
-      setJoinInput("");
-      refreshRooms(client, false);
-      setSelectedRoomId(room.roomId);
+      await handleJoinTarget(joinInput.trim());
     } catch (err) {
       setError(err?.message || "Raum konnte nicht beigetreten werden");
     }
+  }
+
+  async function handleJoinTarget(target, explicitType) {
+    if (!client || !target) return;
+    const trimmed = target.trim();
+    const type = explicitType || (trimmed.startsWith("@") ? "user" : "room");
+
+    if (type === "user") {
+      const created = await client.createRoom({
+        is_direct: true,
+        invite: [trimmed],
+      });
+      setJoinInput("");
+      setJoinSuggestions([]);
+      refreshRooms(client, false);
+      setSelectedRoomId(created.room_id);
+      return;
+    }
+
+    const room = await client.joinRoom(trimmed);
+    setJoinInput("");
+    setJoinSuggestions([]);
+    refreshRooms(client, false);
+    setSelectedRoomId(room.roomId);
   }
 
   function logout() {
@@ -525,7 +775,7 @@ export default function App() {
             <input
               value={chatSearch}
               onChange={(e) => setChatSearch(e.target.value)}
-              placeholder="Chats durchsuchen..."
+              placeholder="Chats, Kontakte, Nachrichten..."
             />
           </div>
 
@@ -533,10 +783,26 @@ export default function App() {
             <input
               value={joinInput}
               onChange={(e) => setJoinInput(e.target.value)}
-              placeholder="Raum-ID oder Alias (#raum:server)"
+              placeholder="Raum-ID, Alias oder User (@name:server)"
             />
             <button type="submit">Join</button>
           </form>
+          {(searchingJoinTargets || joinSuggestions.length > 0) && (
+            <div className="join-suggestions">
+              {searchingJoinTargets && <div className="join-suggestion-meta">Suche...</div>}
+              {joinSuggestions.map((entry) => (
+                <button
+                  key={entry.key}
+                  type="button"
+                  className="join-suggestion"
+                  onClick={() => handleJoinTarget(entry.target, entry.type)}
+                >
+                  <span>{entry.type === "user" ? "User" : "Raum"}: {entry.label}</span>
+                  <small>{entry.subtitle}</small>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="room-list">
             {filteredRooms.map((room) => (
@@ -548,8 +814,14 @@ export default function App() {
                   setTimelineTick((x) => x + 1);
                 }}
               >
-                <span className="room-title">{getRoomName(room)}</span>
-                <small>{room.getUnreadNotificationCount() || 0} ungelesen</small>
+                <span className="room-title">
+                  <HighlightedText text={getRoomName(room)} query={searchQuery} />
+                </span>
+                <small>
+                  {searchQuery
+                    ? `${roomMessageHitCountById.get(room.roomId) || 0} Treffer`
+                    : `${room.getUnreadNotificationCount() || 0} ungelesen`}
+                </small>
               </button>
             ))}
             {rooms.length === 0 && <p className="empty">Keine Raeume gefunden.</p>}
@@ -576,8 +848,8 @@ export default function App() {
             </div>
           </header>
 
-          <section className="messages">
-            {events.map((event) => {
+          <section ref={messagesRef} className="messages">
+            {filteredEvents.map((event) => {
               const content = event.getContent();
               const isImageMessage = content.msgtype === "m.image" || event.getType() === "m.sticker";
               const imageMxc = content.url || content.file?.url || null;
@@ -628,7 +900,9 @@ export default function App() {
                         <AuthenticatedPdf client={client} mxcUrl={imageMxc} filename={content.body} />
                       </div>
                     ) : (
-                      <p>{content.body || "(Nicht-Text-Nachricht)"}</p>
+                      <p>
+                        <RichTextMessage text={content.body || "(Nicht-Text-Nachricht)"} query={searchQuery} />
+                      </p>
                     )}
                     <small className="msg-time">{formatTs(event.getTs())}</small>
                   </div>
@@ -636,6 +910,9 @@ export default function App() {
               );
             })}
             {events.length === 0 && <p className="empty">Noch keine Nachrichten.</p>}
+            {events.length > 0 && filteredEvents.length === 0 && searchQuery && (
+              <p className="empty">Keine Nachrichten-Treffer fuer "{chatSearch}".</p>
+            )}
           </section>
 
           <form className="composer" onSubmit={sendMessage}>

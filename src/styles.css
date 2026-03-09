@@ -180,6 +180,41 @@ input {
   border-bottom: 1px solid var(--line);
 }
 
+.join-suggestions {
+  border-bottom: 1px solid var(--line);
+  background: #f7f7f7;
+}
+
+.join-suggestion-meta {
+  padding: 0.4rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.join-suggestion {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid #e5e5e7;
+  background: transparent;
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  color: #1d1f23;
+}
+
+.join-suggestion:hover {
+  background: #eaf2df;
+}
+
+.join-suggestion span {
+  display: block;
+  font-weight: 600;
+}
+
+.join-suggestion small {
+  color: var(--muted);
+}
+
 .room-list {
   overflow: auto;
 }
@@ -314,6 +349,23 @@ input {
 .bubble p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.msg-link {
+  color: #1f5fa9;
+  text-decoration: underline;
+  word-break: break-word;
+}
+
+.outbound .msg-link {
+  color: #f2ffd9;
+}
+
+.search-mark {
+  background: #fff2a8;
+  color: #1d1f24;
+  border-radius: 3px;
+  padding: 0 2px;
 }
 
 .speak-btn {
