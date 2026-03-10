@@ -277,6 +277,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const messagesRef = useRef(null);
   const ttsSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
@@ -637,6 +638,9 @@ export default function App() {
       if (imageInputRef.current) {
         imageInputRef.current.value = "";
       }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = "";
+      }
     }
   }
 
@@ -922,6 +926,17 @@ export default function App() {
                 ref={imageInputRef}
                 type="file"
                 accept="image/*"
+                onChange={sendImage}
+                disabled={!selectedRoomId || uploadingImage}
+              />
+            </label>
+            <label className={!selectedRoomId || uploadingImage ? "camera-upload disabled" : "camera-upload"}>
+              📷
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
                 onChange={sendImage}
                 disabled={!selectedRoomId || uploadingImage}
               />
